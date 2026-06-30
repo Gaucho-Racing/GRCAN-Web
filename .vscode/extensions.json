@@ -1,0 +1,10 @@
+{
+	"recommendations": [
+		"ms-vsliveshare.vsliveshare",
+		"Gruntfuggly.todo-tree",
+		"github.vscode-github-actions",
+		"github.vscode-pull-request-github",
+		"davidanson.vscode-markdownlint",
+		"ms-vscode.live-server"
+	]
+}
