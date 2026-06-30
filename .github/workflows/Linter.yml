@@ -76,7 +76,6 @@ jobs:
           log_level: "DEBUG"
 
   all:
-    if: ${{ !github.event.pull_request.draft && always() }}
     name: Completed All Linting
     needs: [configs, codeql, web]
     runs-on: ubuntu-slim
