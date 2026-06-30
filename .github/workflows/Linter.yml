@@ -1,0 +1,100 @@
+name: Linter
+run-name: Linter - ${{ github.ref_name }}
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["javascript-typescript", "actions"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: "none"
+          queries: "security-extended"
+
+      - name: Analyze CodeQL
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          category: "${{ matrix.language }}"
+
+  configs:
+    name: Configuration Files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Validate Configuration Files
+        uses: Boeing/validate-configs-action@a31830f9bec7d3ec001cfab7951a966d08180a72 # v2.0.0
+
+  web:
+    name: Web Linter
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: HTML5 Validator
+        uses: Cyb3r-Jak3/html5validator-action@4ea5e57383ed7e14432ebbaae1b64893b7c5210b # v8.0.0
+        with:
+          root: "Web"
+          css: "true"
+          log_level: "DEBUG"
+
+  all:
+    if: ${{ !github.event.pull_request.draft && always() }}
+    name: Completed All Linting
+    needs: [configs, codeql, web]
+    runs-on: ubuntu-slim
+    permissions: {}
+    steps:
+      - name: Fail Linting
+        if: >
+          ${{
+            needs.configs.result != 'success' ||
+            needs.codeql.result != 'success' ||
+            needs.web.result != 'success'
+          }}
+        run: |
+          echo "One or more linting jobs have failed."
+          echo "Please check the individual job logs for details."
+          exit 1
+
+      - name: Complete Linting
+        run: |
+          echo "Linting has been completed for all configured linters."
+          echo "Please refer to the individual job logs for detailed linting information."
