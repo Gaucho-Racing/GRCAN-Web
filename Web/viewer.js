@@ -1438,6 +1438,10 @@ window.addEventListener("DOMContentLoaded", function () {
 			}
 		}
 
+		// Refresh physical topology from the now-loaded .CANdo before rendering,
+		// so the Graph View reflects this ref's wiring.
+		if (window.PhysicalTopology) await window.PhysicalTopology.load();
+
 		if (HIERARCHY_MODE === "NODE_BUS") {
 			await renderNodeBus(ref, localText);
 		} else {
@@ -1481,6 +1485,9 @@ window.addEventListener("DOMContentLoaded", function () {
 		const text = editor.getRawText();
 		if (!text) return;
 		loadNodeIdsFromText(text);
+		// Local edits may have changed the physical topology section; refresh
+		// before re-rendering the Graph View.
+		if (window.PhysicalTopology) await window.PhysicalTopology.load();
 		if (HIERARCHY_MODE === "NODE_BUS") {
 			await renderNodeBus(null, text);
 		} else {
@@ -1576,9 +1583,9 @@ window.addEventListener("DOMContentLoaded", function () {
 		setHierarchyHeaders();
 		wireEditModeButtons();
 		setPlaceholder(firstList, "Loading...");
-		// Load physical topology + functional groups in the background;
-		// non-blocking. Both feed the Graph View renderer.
-		if (window.PhysicalTopology) window.PhysicalTopology.load();
+		// Load functional groups in the background; non-blocking. Physical
+		// topology is sourced from the .CANdo itself and refreshed inside
+		// renderHierarchy once a ref is loaded.
 		if (window.PhysicalGroups) window.PhysicalGroups.load();
 
 		const [branches, tags] = await Promise.all([
