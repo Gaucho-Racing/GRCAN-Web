@@ -15,7 +15,7 @@ Edits are **not** saved to a backend. They exist in browser memory until the use
 | `candoDocument.js` | Semantic document model with cross-section invariants (`window.GrcanDocument`) |
 | `editor.js` | In-memory mutation engine, raw text state (`window.GrcanEditor`) |
 | `viewer.js` | Main controller: rendering, navigation, edit/delete wiring |
-| `physicalTopology.js` | Parses `can_topology.json` to enforce physical bus-to-node constraints |
+| `physicalTopology.js` | Reads the `physical topology` section of `GRCAN.CANdo` (via `GrcanDocument`) to enforce physical bus-to-node constraints |
 | `physicalGroups.js` | Derives functional groupings dynamically from prefixes for the Graph View renderer (`window.PhysicalGroups`) |
 | `layoutPhysicalBus.js` | Pure SVG layout for the physical-bus Graph View (`window.LayoutPhysicalBus`) |
 | `graphView.js` | Physical-bus SVG graph visualization (`window.GrcanGraphView`) |
@@ -45,12 +45,6 @@ Edits are **not** saved to a backend. They exist in browser memory until the use
 | `viewer.css` | Panel/list/view styles |
 | `editor.css` | Modal/form/icon/diff/editor state styles |
 | `graphView.css` | Graph view overlay styles |
-
-### Data
-
-| File | Purpose |
-|---|---|
-| `can_topology.json` | Physical CAN bus topology: which nodes are wired to which bus. Node names must match `GR ID` entries in `GRCAN.CANdo`. |
 
 ### Vendored (retained for rollback, no longer loaded)
 
@@ -91,20 +85,25 @@ against the browser scripts:
 for f in Web/*.js; do node --check "$f" || exit 1; done
 ```
 
-## Editing `can_topology.json`
+## Editing the physical topology
 
-This file defines which devices are physically connected to each CAN bus. The format is a JSON object keyed by bus name, with arrays of node names:
+Physical bus wiring — which devices are physically connected to each CAN bus — lives in the `physical topology` section of `GRCAN.CANdo` itself (in the [Firmware](https://github.com/Gaucho-Racing/Firmware) repo), so it sits alongside the logical bus and routing definitions and is the single source of truth. The viewer reads it directly from the loaded CANdo; there is no separate file to edit here.
 
-```json
-{
-  "Primary": ["ECU", "ACU", "..."],
-  "Data": ["ECU", "SAMM_Mag_1", "..."]
-}
+The section is keyed by bus name, with a list of node names:
+
+```yaml
+physical topology:
+  Primary:
+    - ECU
+    - ACU
+  Data:
+    - ECU
+    - TireTemp FL
 ```
 
 - Bus keys must exactly match entries in the `Bus ID:` section of `GRCAN.CANdo` (e.g. `Primary`, `Data`, `Charger`).
 - Node names must exactly match `GR ID` entries in `GRCAN.CANdo`.
 - `Debugger` and `ALL` are always exempt and should not be listed.
-- JSON has no comment syntax. Rationale for entries should go in this README instead.
+- Buses omitted from the section are treated as unrestricted.
 - Hardware note: both `GR Inv` and `DTI Inv` share `Primary`. Whichever isn't physically connected has its messages go nowhere — no firmware switch needed.
 

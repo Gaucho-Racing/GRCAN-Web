@@ -30,6 +30,7 @@
 	let _byteOrderText = ""; // verbatim byte order line text
 	let _customCanIds = new Map(); // Map<name, {name, canId, length, signals[]}>
 	let _busIds = new Map(); // Map<busName, numericId: number> derived from Bus ID section
+	let _physicalTopology = new Map(); // Map<busName, Set<nodeName>> from "physical topology" section
 
 	// ==================== CAN ID format utilities ====================
 	// Custom CAN ID section canonical form: bare uppercase hex, no 0x prefix (e.g. "2416").
@@ -59,6 +60,7 @@
 		_byteOrderText = "";
 		_customCanIds = new Map();
 		_busIds = new Map();
+		_physicalTopology = new Map();
 
 		if (!rawText) return;
 		const lines = rawText.split("\n");
@@ -68,7 +70,8 @@
 			byteOrderStart = -1,
 			msgIdStart = -1,
 			customCanIdStart = -1,
-			grIdStart = -1;
+			grIdStart = -1,
+			physicalTopologyStart = -1;
 
 		for (let i = 0; i < lines.length; i++) {
 			const l = lines[i];
@@ -77,12 +80,24 @@
 			else if (l.startsWith("Message ID:")) msgIdStart = i;
 			else if (l.startsWith("Custom CAN ID:")) customCanIdStart = i;
 			else if (l.startsWith("GR ID:")) grIdStart = i;
+			else if (l.startsWith("physical topology:")) physicalTopologyStart = i;
 		}
 
-		// Verbatim: Bus ID = everything before routing section header.
+		// Verbatim: Bus ID = everything before routing section header. This span
+		// also contains the "physical topology" section, which is preserved
+		// verbatim here and additionally parsed into _physicalTopology below.
 		if (routingStart > 0) {
 			_busIdsText = lines.slice(0, routingStart).join("\n").replace(/\n+$/, "");
-			_parseBusIdsSection(lines, 0, routingStart);
+			// Bus ID header block ends where physical topology begins (if present).
+			const busIdEnd =
+				physicalTopologyStart > -1 ? physicalTopologyStart : routingStart;
+			_parseBusIdsSection(lines, 0, busIdEnd);
+		}
+
+		// Read-only: physical topology section (sits between Bus ID and routing).
+		if (physicalTopologyStart > -1) {
+			const end = routingStart > -1 ? routingStart : lines.length;
+			_parsePhysicalTopologySection(lines, physicalTopologyStart, end);
 		}
 
 		// Verbatim: byte order line through the blank line before Message ID.
@@ -157,6 +172,39 @@
 					_busIds.set(pendingBusName, parseInt(idMatch[1], 10));
 					pendingBusName = null;
 				}
+			}
+		}
+	}
+
+	// Parses the "physical topology:" section into _physicalTopology
+	// (busName → Set<nodeName>). Records which devices are physically wired to
+	// each CAN bus. Hand-editable, read-only here — the section is preserved
+	// verbatim on serialize as part of the Bus ID span, so this parse never
+	// feeds back into output. Format:
+	//   physical topology:
+	//     BusName:
+	//       - NodeName
+	function _parsePhysicalTopologySection(lines, start, end) {
+		let curBus = null;
+		for (let i = start; i < end; i++) {
+			const line = lines[i];
+			if (line.startsWith("physical topology:")) continue;
+			if (line.trim() === "" || line.trim().startsWith("#")) continue;
+			// Stop at next top-level (non-indented) line.
+			if (/^\S/.test(line)) break;
+			// "  BusName:" (indent 2, no value)
+			const busMatch = line.match(/^  (\S[^:]*):\s*$/);
+			if (busMatch) {
+				curBus = busMatch[1].trim();
+				if (!_physicalTopology.has(curBus)) {
+					_physicalTopology.set(curBus, new Set());
+				}
+				continue;
+			}
+			// "    - NodeName" (list item under current bus)
+			const nodeMatch = line.match(/^\s+-\s+(.+?)\s*$/);
+			if (nodeMatch && curBus !== null) {
+				_physicalTopology.get(curBus).add(nodeMatch[1].trim());
 			}
 		}
 	}
@@ -653,7 +701,8 @@
 		}
 
 		// V8: PHYSICAL_BUS_VIOLATION
-		// Only runs when PhysicalTopology has successfully loaded can_topology.json.
+		// Only runs when PhysicalTopology has successfully loaded the physical
+		// topology section from the .CANdo document.
 		const _topo = (typeof window !== "undefined" ? window : {})
 			.PhysicalTopology;
 		if (_topo && _topo.isLoaded()) {
@@ -1319,6 +1368,19 @@
 		return _busIds.has(busPort);
 	}
 
+	// Returns the physical bus wiring from the "physical topology:" section as
+	// Map<busName, Set<nodeName>>. This is the source of truth for which devices
+	// are physically wired to which CAN bus — consumed by PhysicalTopology.
+	// Returns a fresh copy so callers cannot mutate internal state.
+	function getPhysicalTopology() {
+		_ensureParsed();
+		const out = new Map();
+		for (const [bus, nodes] of _physicalTopology) {
+			out.set(bus, new Set(nodes));
+		}
+		return out;
+	}
+
 	function getGrIds() {
 		_ensureParsed();
 		return new Map(_grIds);
@@ -1457,6 +1519,7 @@
 		grIdExists,
 		getDeviceNames,
 		getBusNames,
+		getPhysicalTopology,
 		getGrIds,
 		getGrId,
 		getMessageDef,
